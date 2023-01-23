@@ -1,5 +1,5 @@
 {
-  "name": "@hedgehog-markets/firebase-functions",
+  "name": "firebase-functions",
   "version": "4.2.0-patch.1",
   "description": "Firebase SDK for Cloud Functions",
   "keywords": [
@@ -8,13 +8,13 @@
     "google",
     "cloud"
   ],
-  "homepage": "https://github.com/Hedgehog-Markets/firebase-functions#readme",
+  "homepage": "https://github.com/firebase/firebase-functions#readme",
   "bugs": {
-    "url": "https://github.com/Hedgehog-Markets/firebase-functions/issues"
+    "url": "https://github.com/firebase/firebase-functions/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Hedgehog-Markets/firebase-functions.git"
+    "url": "https://github.com/firebase/firebase-functions.git"
   },
   "license": "MIT",
   "author": "Firebase Team",
@@ -160,9 +160,6 @@
         "lib/v2/providers/testLab"
       ]
     }
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "docgen:v1:extract": "api-extractor run -c docgen/api-extractor.v1.json --local",
