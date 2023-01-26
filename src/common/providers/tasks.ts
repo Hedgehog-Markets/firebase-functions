@@ -114,9 +114,9 @@ export interface TaskData {
   executionCount: number;
 
   /**
-   * The schedule time of the task, specified in seconds since January 1st 1970.
+   * The schedule time of the task.
    */
-  eta: number;
+  eta: Date;
 }
 
 /** Metadata about a call to a Task Queue function. */
@@ -199,19 +199,27 @@ export function onDispatchHandler<Req = any>(
           invalidHeaders.push(["X-CloudTasks-TaskExecutionCount", executionCount ?? null]);
         }
         const taskEta = req.header("X-CloudTasks-TaskETA");
-        if (taskEta == null || !/^\d+$/.test(taskEta)) {
+        if (taskEta == null || !/^\d+(?:\.\d+)$/.test(taskEta)) {
           invalidHeaders.push(["X-CloudTasks-TaskETA", taskEta ?? null]);
         }
         if (invalidHeaders.length > 0) {
           logger.error("Invalid cloud task headers", { headers: invalidHeaders });
           throw new https.HttpsError("internal", "Invalid cloud task headers", invalidHeaders);
         }
+
+        let eta: Date;
+        {
+          const [secs, frac] = taskEta.split(".");
+          const ms = Math.round(Number(frac.slice(0, 4).padEnd(4, "0")) / 10);
+          eta = new Date(Number(secs) * 1000 + ms);
+        }
+
         context.task = {
           queue: queueName,
           name: taskName,
           retryCount: Number(retryCount),
           executionCount: Number(executionCount),
-          eta: Number(taskEta),
+          eta,
         };
       }
 
