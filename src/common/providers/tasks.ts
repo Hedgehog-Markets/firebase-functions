@@ -82,12 +82,54 @@ export interface AuthData {
   token: DecodedIdToken;
 }
 
+/** Metadata about the task invocation. */
+export interface TaskData {
+  /**
+   * The name of the queue.
+   */
+  queueName: string;
+
+  /**
+   * The "short" name of the task, or, if no name was specified at creation,
+   * a unique system-generated id.
+   *
+   * This is the `{task}` value in the complete task name, ie.
+   * `projects/{project}/locations/{location}/queues/{queue}/tasks/{task}`.
+   */
+  taskName: string;
+
+  /**
+   * The number of times this task has been retried. For the first attempt,
+   * this value is `0`. This number includes attempts where the task failed
+   * due to `5XX` error codes and never reached the execution phase.
+   */
+  retryCount: number;
+
+  /**
+   * The total number of times that the task has received a response from the
+   * handler. Since Cloud Tasks deletes the task once a successful response
+   * has been received, all previous handler responses were failures.
+   * This number does not include failures due to 5XX error codes.
+   */
+  executionCount: number;
+
+  /**
+   * The schedule time of the task.
+   */
+  eta: Date;
+}
+
 /** Metadata about a call to a Task Queue function. */
 export interface TaskContext {
   /**
    * The result of decoding and verifying an ODIC token.
    */
   auth?: AuthData;
+
+  /**
+   * Task-specific information.
+   */
+  task?: TaskData;
 }
 
 /**
@@ -103,6 +145,11 @@ export interface Request<T = any> {
    * The result of decoding and verifying an ODIC token.
    */
   auth?: AuthData;
+
+  /**
+   * Task-specific information.
+   */
+  task?: TaskData;
 }
 
 type v1TaskHandler = (data: any, context: TaskContext) => void | Promise<void>;
@@ -133,6 +180,7 @@ export function onDispatchHandler<Req = any>(
           uid: authToken.uid,
           token: authToken,
         };
+        context.task = parseCloudTaskHeaders(req);
       }
 
       const data: Req = https.decode(req.body.data);
@@ -163,4 +211,70 @@ export function onDispatchHandler<Req = any>(
       res.status(status).send(body);
     }
   };
+}
+
+type CloudTaskHeader =
+  | "X-CloudTasks-QueueName"
+  | "X-CloudTasks-TaskName"
+  | "X-CloudTasks-TaskRetryCount"
+  | "X-CloudTasks-TaskExecutionCount"
+  | "X-CloudTasks-TaskETA";
+
+function parseCloudTaskHeaders(
+  req: https.Request & { header(name: CloudTaskHeader): string | undefined }
+): TaskData | undefined {
+  const data: Partial<TaskData> = {};
+  const invalidHeaders: { [K in CloudTaskHeader]?: string | null } = {};
+
+  function parseString(header: CloudTaskHeader): string | undefined {
+    const string = req.header(header);
+    if (string == null) {
+      invalidHeaders[header] = null;
+      return undefined;
+    }
+    return string;
+  }
+
+  function parseInt(header: CloudTaskHeader): number | undefined {
+    const string = parseString(header);
+    if (string == null) {
+      return undefined;
+    }
+    const value = Number(string);
+    if (!Number.isInteger(value)) {
+      invalidHeaders[header] = string;
+      return undefined;
+    }
+    return value;
+  }
+
+  function parseTimestamp(header: CloudTaskHeader): Date | undefined {
+    const string = parseString(header);
+    if (string == null) {
+      return undefined;
+    }
+    if (!/^\s*\d+(?:\.\d+)?\s*$/.test(string)) {
+      invalidHeaders[header] = string;
+      return undefined;
+    }
+    const [int, frac] = string.trim().split(".");
+    let ms = Number(int) * 1000;
+    if (frac) {
+      ms += Number(frac.slice(0, 3).padEnd(3, "0"));
+    }
+    return new Date(ms);
+  }
+
+  data.queueName = parseString("X-CloudTasks-QueueName");
+  data.taskName = parseString("X-CloudTasks-TaskName");
+  data.retryCount = parseInt("X-CloudTasks-TaskRetryCount");
+  data.executionCount = parseInt("X-CloudTasks-TaskExecutionCount");
+  data.eta = parseTimestamp("X-CloudTasks-TaskETA");
+
+  if (Object.keys(invalidHeaders).length > 0) {
+    logger.warn("Invalid cloud task headers", { headers: invalidHeaders });
+    return undefined;
+  }
+
+  return data as TaskData;
 }
